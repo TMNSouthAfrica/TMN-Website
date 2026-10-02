@@ -78,3 +78,37 @@ export function buildCanonicalOutput(
     extraHeaders,
   };
 }
+
+/**
+ * Stacks several sheets' canonical outputs into one file. The standard fields
+ * line up as-is; extra columns are matched by field name, so an "Email" column
+ * ticked on two sheets lands in one Email column (blank for sheets without it).
+ */
+export function combineCanonicalOutputs(outputs: CanonicalOutput[]): CanonicalOutput {
+  const extraHeaders: string[] = [];
+  for (const output of outputs) {
+    for (const header of output.extraHeaders) {
+      if (!extraHeaders.includes(header)) extraHeaders.push(header);
+    }
+  }
+
+  const base = CANONICAL_HEADERS.length;
+  const rows = outputs.flatMap((output) =>
+    output.rows.map((row) => [
+      ...row.slice(0, base),
+      ...extraHeaders.map((header) => {
+        const i = output.extraHeaders.indexOf(header);
+        return i >= 0 ? (row[base + i] ?? "") : "";
+      }),
+    ]),
+  );
+
+  return {
+    headers: [...CANONICAL_HEADERS, ...extraHeaders],
+    rows,
+    foundInSource: {
+      contactStatus: outputs.every((o) => o.foundInSource.contactStatus),
+    },
+    extraHeaders,
+  };
+}

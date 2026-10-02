@@ -1,24 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import type { ParsedFile, ScrubResult } from "@/lib/types";
+import type { ParsedFile, ScrubResult, ScrubSummary } from "@/lib/types";
 import type { CanonicalOutput } from "@/lib/canonicalOutput";
 import Button from "./Button";
 import {
   buildCsvBlob,
+  buildNewXlsxBlob,
   buildRemovedContactsCsvBlob,
   buildXlsxBlob,
   cleanedFileName,
   downloadBlob,
 } from "@/lib/exportFile";
 
+/** One cleaned sheet. A combined basic-cleaning run has several. */
+export interface ResultSource {
+  file: ParsedFile;
+  sheetName: string;
+  label: string;
+  summary: ScrubSummary;
+}
+
 interface ResultsStepProps {
   stepNumber: number;
   cleaningType: "basic" | "optout";
   result: ScrubResult;
   canonicalOutput: CanonicalOutput;
-  customerFile: ParsedFile;
-  customerSheetName: string;
+  sources: ResultSource[];
   onBack: () => void;
   onRestart: () => void;
 }
@@ -58,18 +66,30 @@ export default function ResultsStep({
   cleaningType,
   result,
   canonicalOutput,
-  customerFile,
-  customerSheetName,
+  sources,
   onBack,
   onRestart,
 }: ResultsStepProps) {
   const [showRemoved, setShowRemoved] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const { summary } = result;
+  const combined = sources.length > 1;
+  const { file: customerFile, sheetName: customerSheetName } = sources[0];
 
   function downloadCleaned() {
     setDownloadError(null);
     try {
+      if (combined) {
+        // Stay CSV only when every source was a CSV; otherwise one fresh Excel sheet.
+        if (sources.every((s) => s.file.format === "csv")) {
+          const blob = buildCsvBlob(canonicalOutput.headers, canonicalOutput.rows, ",");
+          downloadBlob(blob, "combined_cleaned.csv");
+        } else {
+          const blob = buildNewXlsxBlob(canonicalOutput.headers, canonicalOutput.rows, "Cleaned");
+          downloadBlob(blob, "combined_cleaned.xlsx");
+        }
+        return;
+      }
       const name = cleanedFileName(customerFile.fileName);
       if (customerFile.format === "csv") {
         const blob = buildCsvBlob(
@@ -97,7 +117,7 @@ export default function ResultsStep({
   function downloadRemovedContacts() {
     setDownloadError(null);
     try {
-      const base = customerFile.fileName.replace(/\.[^.]+$/, "");
+      const base = combined ? "combined" : customerFile.fileName.replace(/\.[^.]+$/, "");
       const blob = buildRemovedContactsCsvBlob(result.removedContacts);
       downloadBlob(blob, `${base}_removed_contacts.csv`);
     } catch (e) {
@@ -113,6 +133,12 @@ export default function ResultsStep({
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">
           {stepNumber}. Summary
         </h2>
+        {combined && (
+          <p className="mt-2 text-base text-zinc-500">
+            <strong className="text-zinc-700">{sources.length} sheets</strong> were cleaned
+            together into one combined file. Duplicates were removed across all of them.
+          </p>
+        )}
         <p className="mt-2 text-base text-zinc-500">
           Assumed default country code{" "}
           <strong className="text-zinc-700">
@@ -165,7 +191,7 @@ export default function ResultsStep({
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard
-          label="Rows in original file"
+          label={combined ? "Rows across all sheets" : "Rows in original file"}
           value={summary.totalOriginalRows}
         />
         <StatCard
@@ -204,9 +230,41 @@ export default function ResultsStep({
         />
       </div>
 
+      {combined && (
+        <div className="overflow-x-auto rounded-2xl border border-zinc-100">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50">
+              <tr>
+                {["Sheet", "Rows", "Invalid", "Duplicates", "Kept"].map((h, i) => (
+                  <th
+                    key={h}
+                    className={`px-4 py-2.5 text-xs font-semibold tracking-wide text-zinc-400 uppercase ${i === 0 ? "text-left" : "text-right"}`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {sources.map((s) => (
+                <tr key={`${s.file.id}::${s.sheetName}`}>
+                  <td className="px-4 py-2.5 font-medium text-zinc-700">{s.label}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.totalOriginalRows}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.invalidRowsRemoved}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.duplicateRowsRemoved}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-brand-green">
+                    {s.summary.rowsRemaining}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={downloadCleaned} disabled={!summary.consistent}>
-          Download cleaned file
+          {combined ? "Download combined cleaned file" : "Download cleaned file"}
         </Button>
         <Button
           variant="secondary"
@@ -235,6 +293,11 @@ export default function ResultsStep({
                 <th className="px-4 py-2.5 text-left text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                   Reason
                 </th>
+                {combined && (
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                    Sheet
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -263,6 +326,7 @@ export default function ResultsStep({
                           : "Duplicate"}
                     </span>
                   </td>
+                  {combined && <td className="px-4 py-2.5 text-zinc-500">{c.source}</td>}
                 </tr>
               ))}
             </tbody>

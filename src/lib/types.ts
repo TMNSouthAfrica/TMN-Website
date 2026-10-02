@@ -75,6 +75,8 @@ export interface RemovedContact {
   name: string;
   phone: string;
   reason: RemovalReason;
+  /** Which file/sheet the row came from — only set when several sheets were cleaned together. */
+  source?: string;
 }
 
 export interface ScrubResult {
