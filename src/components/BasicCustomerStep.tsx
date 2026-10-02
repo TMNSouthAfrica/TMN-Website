@@ -128,6 +128,7 @@ export default function BasicCustomerStep({
                       roles={state.roles}
                       extraColumns={extraColumnsFor(key)}
                       extraColumnsSelected={state.extraColumnsSelected}
+                      showRowCount={false}
                       onRoleChange={(colIndex, role) => onRoleChange(key, colIndex, role)}
                       onExtraColumnToggle={(colIndex, included) =>
                         onExtraColumnToggle(key, colIndex, included)

@@ -16,6 +16,8 @@ interface CustomerSheetPanelProps {
   extraColumnsSelected: Record<number, boolean>;
   onRoleChange: (colIndex: number, role: ColumnRole) => void;
   onExtraColumnToggle: (colIndex: number, included: boolean) => void;
+  /** Off when the caller already shows the row count next to the sheet name. */
+  showRowCount?: boolean;
 }
 
 /** Column mapping + optional extra-column picker for one customer sheet. */
@@ -26,12 +28,15 @@ export default function CustomerSheetPanel({
   extraColumnsSelected,
   onRoleChange,
   onExtraColumnToggle,
+  showRowCount = true,
 }: CustomerSheetPanelProps) {
   return (
     <div className="mt-3">
-      <p className="mb-2 text-xs text-zinc-400">
-        {sheet.rows.length} rows
-      </p>
+      {showRowCount && (
+        <p className="mb-2 text-xs text-zinc-400">
+          {sheet.rows.length} rows
+        </p>
+      )}
       {sheet.headers.length === 0 ? (
         <p className="text-sm text-zinc-400">
           This sheet appears to be empty.
