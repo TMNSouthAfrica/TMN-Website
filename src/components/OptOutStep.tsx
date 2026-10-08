@@ -1,6 +1,7 @@
 "use client";
 
 import Dropzone from "./Dropzone";
+import CountryCodeSelect from "./CountryCodeSelect";
 import ColumnMapper, { ColumnRole } from "./ColumnMapper";
 import Button from "./Button";
 import type { ParsedFile } from "@/lib/types";
@@ -59,24 +60,11 @@ export default function OptOutStep({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-zinc-50 px-4 py-3">
-        <label htmlFor="cc" className="text-sm font-medium text-zinc-700">
-          Default country dial code
-        </label>
-        <input
-          id="cc"
-          type="text"
-          inputMode="numeric"
-          className="w-20 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-center text-sm font-semibold focus:ring-2 focus:ring-brand-green/50 focus:outline-none"
-          value={defaultCountryCode}
-          onChange={(e) =>
-            onDefaultCountryCodeChange(e.target.value.replace(/\D/g, ""))
-          }
-        />
-        <span className="text-xs text-zinc-400">
-          Applied when a number starts with a leading 0 (South Africa = 27)
-        </span>
-      </div>
+      <CountryCodeSelect
+        id="cc"
+        value={defaultCountryCode}
+        onChange={onDefaultCountryCodeChange}
+      />
 
       <Dropzone
         label="Drop opt-out file(s) here"

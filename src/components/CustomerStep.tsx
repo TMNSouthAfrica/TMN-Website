@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Dropzone from "./Dropzone";
+import CountryCodeSelect from "./CountryCodeSelect";
 import type { ColumnRole } from "./ColumnMapper";
 import Button from "./Button";
 import CustomerSheetPanel, { type ExtraColumn } from "./CustomerSheetPanel";
@@ -17,6 +18,8 @@ export interface CustomerSheetState {
 interface CustomerStepProps {
   stepNumber: number;
   showOptOutCopy: boolean;
+  defaultCountryCode: string;
+  onDefaultCountryCodeChange: (value: string) => void;
   files: ParsedFile[];
   sheets: Record<string, CustomerSheetState>;
   extraColumnsFor: (key: string) => ExtraColumn[];
@@ -43,6 +46,8 @@ interface CustomerStepProps {
 export default function CustomerStep({
   stepNumber,
   showOptOutCopy,
+  defaultCountryCode,
+  onDefaultCountryCodeChange,
   files,
   sheets,
   extraColumnsFor,
@@ -89,6 +94,12 @@ export default function CustomerStep({
           everything is deduped together and you get one combined CSV.
         </p>
       </div>
+
+      <CountryCodeSelect
+        id="customer-cc"
+        value={defaultCountryCode}
+        onChange={onDefaultCountryCodeChange}
+      />
 
       <Dropzone
         label={
