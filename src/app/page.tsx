@@ -447,6 +447,8 @@ export default function Home() {
             <CustomerStep
               stepNumber={cleaningType === "optout" ? 3 : 2}
               showOptOutCopy={cleaningType === "optout"}
+              defaultCountryCode={defaultCountryCode}
+              onDefaultCountryCodeChange={setDefaultCountryCode}
               files={customerFiles}
               sheets={customerSheets}
               extraColumnsFor={customerExtraColumnsFor}
