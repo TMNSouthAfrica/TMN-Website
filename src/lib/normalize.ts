@@ -15,6 +15,44 @@ export const SUPPORTED_COUNTRIES = [
 ] as const;
 
 /**
+ * Every country calling code in use (ITU E.164 geographic codes). No code is
+ * the start of another, so at most one can match the front of a number.
+ */
+const COUNTRY_CALLING_CODES = new Set([
+  "1", "7",
+  "20", "211", "212", "213", "216", "218", "220", "221", "222", "223", "224", "225", "226",
+  "227", "228", "229", "230", "231", "232", "233", "234", "235", "236", "237", "238", "239",
+  "240", "241", "242", "243", "244", "245", "246", "247", "248", "249", "250", "251", "252",
+  "253", "254", "255", "256", "257", "258", "260", "261", "262", "263", "264", "265", "266",
+  "267", "268", "269", "27", "290", "291", "297", "298", "299",
+  "30", "31", "32", "33", "34", "350", "351", "352", "353", "354", "355", "356", "357", "358",
+  "359", "36", "370", "371", "372", "373", "374", "375", "376", "377", "378", "379", "380",
+  "381", "382", "383", "385", "386", "387", "389", "39",
+  "40", "41", "420", "421", "423", "43", "44", "45", "46", "47", "48", "49",
+  "500", "501", "502", "503", "504", "505", "506", "507", "508", "509", "51", "52", "53",
+  "54", "55", "56", "57", "58", "590", "591", "592", "593", "594", "595", "596", "597",
+  "598", "599",
+  "60", "61", "62", "63", "64", "65", "66", "670", "672", "673", "674", "675", "676", "677",
+  "678", "679", "680", "681", "682", "683", "685", "686", "687", "688", "689", "690", "691",
+  "692",
+  "81", "82", "84", "850", "852", "853", "855", "856", "86", "880", "886",
+  "90", "91", "92", "93", "94", "95", "960", "961", "962", "963", "964", "965", "966", "967",
+  "968", "970", "971", "972", "973", "974", "975", "976", "977", "98", "992", "993", "994",
+  "995", "996", "998",
+]);
+
+/** A number without + or 00 is only read as international from this length up. */
+const MIN_INTERNATIONAL_LENGTH = 11;
+
+function countryCallingCodeOf(digits: string): string | null {
+  for (const length of [1, 2, 3]) {
+    const prefix = digits.slice(0, length);
+    if (digits.length > length && COUNTRY_CALLING_CODES.has(prefix)) return prefix;
+  }
+  return null;
+}
+
+/**
  * Normalizes a raw phone number value into a pure-digit string, e.g. "27821234567".
  * It is the country code and local number from splitPhoneNumber joined
  * together, so matching and export always agree. Returns null if there are no
@@ -48,9 +86,10 @@ function stripCountryCodePrefix(local: string, ccDigits: string): string {
  * phone number uses (E.164 caps international numbers at 15 digits), and
  * values that are just the same digit repeated as typed — a common
  * placeholder for missing data ("0000000000") rather than a real contact
- * number. Checked on the digits as typed (before any leading-zero stripping
- * or country-code merging) so a placeholder is still caught even though
- * merging a country code onto it would otherwise break up the repeated run.
+ * number. That is checked on the digits as typed (before any leading-zero
+ * stripping or country-code merging) so a placeholder is still caught even
+ * though merging a country code onto it would otherwise break up the repeated
+ * run. A country code followed by one repeated digit is rejected as well.
  */
 export function isValidPhoneNumber(
   raw: string | number | null | undefined,
@@ -61,8 +100,11 @@ export function isValidPhoneNumber(
   if (!digits) return false;
   if (/^(\d)\1+$/.test(digits)) return false;
 
-  const normalized = normalizePhoneNumber(raw, defaultCountryCode, explicitCountryCode);
-  if (!normalized || normalized.length < 8 || normalized.length > 15) return false;
+  const parts = splitPhoneNumber(raw, defaultCountryCode, explicitCountryCode);
+  const normalized = parts ? parts.countryCode + parts.local : "";
+  if (normalized.length < 8 || normalized.length > 15) return false;
+  // A real country code followed by one repeated digit ("+27 000 000 000") is a placeholder too.
+  if (/^(\d)\1+$/.test(parts?.local ?? "")) return false;
 
   return true;
 }
@@ -82,15 +124,19 @@ export interface PhoneParts {
  *     baked in (e.g. CountryCode=27, Phone=27821234567), then strip a 0 left
  *     after it ("27 082…").
  *  3. Otherwise a leading "00" is the international dialling prefix
- *     ("0027821234567"), so it is dropped and the rest read as international.
+ *     ("0027821234567"), so it is dropped and the rest read as international,
+ *     as is a number written with a "+".
  *  4. A single leading 0 means a local number: it is replaced with
  *     `defaultCountryCode`.
- *  5. A number exactly as long as a local number of the default country
- *     (Excel dropped its leading 0, e.g. "821234567") also gets the default
- *     country code.
+ *  5. A number (without + or 00) exactly as long as a local number of the
+ *     default country (Excel dropped its leading 0, e.g. "821234567") also
+ *     gets the default country code.
  *  6. A number starting with one of SUPPORTED_COUNTRIES' codes is split there,
  *     dropping a 0 written after the code ("+27 (0)82…").
- *  7. Anything else keeps its digits as the local number with the country code
+ *  7. A number starting with any other country calling code is split there
+ *     too, if it was written with + or 00 or is long enough to be
+ *     international (so a mistyped local number isn't given a foreign code).
+ *  8. Anything else keeps its digits as the local number with the country code
  *     left blank rather than guessed.
  */
 export function splitPhoneNumber(
@@ -111,6 +157,7 @@ export function splitPhoneNumber(
   }
 
   const defaultCc = onlyDigits(defaultCountryCode);
+  const writtenInternational = String(raw).includes("+") || digits.startsWith("00");
 
   if (digits.startsWith("00")) {
     digits = digits.slice(2);
@@ -122,7 +169,11 @@ export function splitPhoneNumber(
   }
 
   const defaultCountry = SUPPORTED_COUNTRIES.find((c) => c.code === defaultCc);
-  if (defaultCountry && (defaultCountry.localLengths as readonly number[]).includes(digits.length)) {
+  if (
+    !writtenInternational &&
+    defaultCountry &&
+    (defaultCountry.localLengths as readonly number[]).includes(digits.length)
+  ) {
     return { countryCode: defaultCc, local: digits };
   }
 
@@ -131,6 +182,11 @@ export function splitPhoneNumber(
   );
   if (known) {
     return { countryCode: known.code, local: dropLeadingZero(digits.slice(known.code.length)) };
+  }
+
+  const anyCode = countryCallingCodeOf(digits);
+  if (anyCode && (writtenInternational || digits.length >= MIN_INTERNATIONAL_LENGTH)) {
+    return { countryCode: anyCode, local: dropLeadingZero(digits.slice(anyCode.length)) };
   }
 
   if (defaultCc && digits.startsWith(defaultCc) && digits.length > defaultCc.length) {

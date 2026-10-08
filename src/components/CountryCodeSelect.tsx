@@ -60,8 +60,8 @@ export default function CountryCodeSelect({ id, value, onChange }: CountryCodeSe
         </label>
       )}
       <span className="text-xs text-zinc-400">
-        Used for numbers starting with 0. Numbers with +27, +263, +267, +266, +268, +258 or
-        +264 are recognised automatically.
+        Used for numbers starting with 0. Numbers that include a country code (+27, +263,
+        +260, +44…) are recognised automatically.
       </span>
     </div>
   );
