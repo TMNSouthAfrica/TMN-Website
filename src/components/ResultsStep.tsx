@@ -6,7 +6,6 @@ import type { CanonicalOutput } from "@/lib/canonicalOutput";
 import Button from "./Button";
 import {
   buildCsvBlob,
-  buildNewXlsxBlob,
   buildRemovedContactsCsvBlob,
   buildXlsxBlob,
   cleanedFileName,
@@ -80,14 +79,9 @@ export default function ResultsStep({
     setDownloadError(null);
     try {
       if (combined) {
-        // Stay CSV only when every source was a CSV; otherwise one fresh Excel sheet.
-        if (sources.every((s) => s.file.format === "csv")) {
-          const blob = buildCsvBlob(canonicalOutput.headers, canonicalOutput.rows, ",");
-          downloadBlob(blob, "combined_cleaned.csv");
-        } else {
-          const blob = buildNewXlsxBlob(canonicalOutput.headers, canonicalOutput.rows, "Cleaned");
-          downloadBlob(blob, "combined_cleaned.xlsx");
-        }
+        // Several files/sheets always come out as one combined CSV.
+        const blob = buildCsvBlob(canonicalOutput.headers, canonicalOutput.rows, ",");
+        downloadBlob(blob, "combined_cleaned.csv");
         return;
       }
       const name = cleanedFileName(customerFile.fileName);
@@ -136,7 +130,7 @@ export default function ResultsStep({
         {combined && (
           <p className="mt-2 text-base text-zinc-500">
             <strong className="text-zinc-700">{sources.length} sheets</strong> were cleaned
-            together into one combined file. Duplicates were removed across all of them.
+            together into one combined CSV. Duplicates were removed across all of them.
           </p>
         )}
         <p className="mt-2 text-base text-zinc-500">
@@ -231,11 +225,18 @@ export default function ResultsStep({
       </div>
 
       {combined && (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-100">
+        <div className="max-h-96 overflow-auto rounded-2xl border border-zinc-100">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50">
+            <thead className="sticky top-0 bg-zinc-50">
               <tr>
-                {["Sheet", "Rows", "Invalid", "Duplicates", "Kept"].map((h, i) => (
+                {[
+                  "Sheet",
+                  "Rows",
+                  "Invalid",
+                  "Duplicates",
+                  ...(cleaningType === "optout" ? ["Opt-outs"] : []),
+                  "Kept",
+                ].map((h, i) => (
                   <th
                     key={h}
                     className={`px-4 py-2.5 text-xs font-semibold tracking-wide text-zinc-400 uppercase ${i === 0 ? "text-left" : "text-right"}`}
@@ -252,6 +253,9 @@ export default function ResultsStep({
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.totalOriginalRows}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.invalidRowsRemoved}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.duplicateRowsRemoved}</td>
+                  {cleaningType === "optout" && (
+                    <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.optOutRowsRemoved}</td>
+                  )}
                   <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-brand-green">
                     {s.summary.rowsRemaining}
                   </td>

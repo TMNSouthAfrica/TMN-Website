@@ -31,16 +31,6 @@ export function buildXlsxBlob(
   });
 }
 
-/** Builds a brand-new single-sheet workbook — used for a combined multi-sheet export. */
-export function buildNewXlsxBlob(headers: string[], rows: string[][], sheetName: string): Blob {
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...rows]), sheetName);
-  const out = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-  return new Blob([out], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-}
-
 const REMOVAL_REASON_LABELS: Record<RemovedContact["reason"], string> = {
   "opt-out": "Opt-out",
   duplicate: "Duplicate",
