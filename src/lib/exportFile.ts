@@ -38,10 +38,16 @@ const REMOVAL_REASON_LABELS: Record<RemovedContact["reason"], string> = {
 };
 
 export function buildRemovedContactsCsvBlob(contacts: RemovedContact[]): Blob {
+  const withSource = contacts.some((c) => c.source !== undefined);
   const content = Papa.unparse(
     [
-      ["Name", "Phone", "Reason"],
-      ...contacts.map((c) => [c.name, c.phone, REMOVAL_REASON_LABELS[c.reason]]),
+      ["Name", "Phone", "Reason", ...(withSource ? ["Source"] : [])],
+      ...contacts.map((c) => [
+        c.name,
+        c.phone,
+        REMOVAL_REASON_LABELS[c.reason],
+        ...(withSource ? [c.source ?? ""] : []),
+      ]),
     ],
     { delimiter: "," },
   );

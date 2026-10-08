@@ -38,18 +38,22 @@ export function buildOptOutSet(
  * phone number (keeping the first occurrence of each), then removes anyone
  * whose number is in `optOutSet` (pass an empty set for basic cleaning,
  * where there is no opt-out list).
+ *
+ * Pass the same `seenNumbers` set across several calls to dedupe across
+ * multiple sheets — a number already kept from an earlier sheet is then
+ * removed as a duplicate here.
  */
 export function scrubCustomerSheet(
   sheet: ParsedSheet,
   config: CustomerSheetConfig,
   optOutSet: Set<string>,
   defaultCountryCode: string,
+  seenNumbers: Set<string> = new Set<string>(),
 ): ScrubResult {
   const keptRows: string[][] = [];
   const removedRows: string[][] = [];
   const removedContacts: RemovedContact[] = [];
   const matchedOptOutNumbers = new Set<string>();
-  const seenNumbers = new Set<string>();
   let invalidRowsRemoved = 0;
   let duplicateRowsRemoved = 0;
   let optOutRowsRemoved = 0;
@@ -116,6 +120,39 @@ export function scrubCustomerSheet(
       rowsRemaining,
       consistent: totalOriginalRows === rowsRemoved + rowsRemaining,
       defaultCountryCode,
+    },
+  };
+}
+
+/**
+ * Merges the per-sheet results of a multi-sheet run into one result. Each
+ * removed contact is tagged with the sheet it came from.
+ */
+export function combineScrubResults(
+  parts: { label: string; result: ScrubResult }[],
+): ScrubResult {
+  const sum = (pick: (r: ScrubResult) => number) =>
+    parts.reduce((total, { result }) => total + pick(result), 0);
+  const first = parts[0].result.summary;
+
+  return {
+    headers: [],
+    keptRows: parts.flatMap(({ result }) => result.keptRows),
+    removedRows: parts.flatMap(({ result }) => result.removedRows),
+    removedContacts: parts.flatMap(({ label, result }) =>
+      result.removedContacts.map((c) => ({ ...c, source: label })),
+    ),
+    summary: {
+      totalOriginalRows: sum((r) => r.summary.totalOriginalRows),
+      totalUniqueOptOutNumbers: first.totalUniqueOptOutNumbers,
+      uniqueMatchedContactsRemoved: sum((r) => r.summary.uniqueMatchedContactsRemoved),
+      duplicateRowsRemoved: sum((r) => r.summary.duplicateRowsRemoved),
+      optOutRowsRemoved: sum((r) => r.summary.optOutRowsRemoved),
+      invalidRowsRemoved: sum((r) => r.summary.invalidRowsRemoved),
+      rowsRemoved: sum((r) => r.summary.rowsRemoved),
+      rowsRemaining: sum((r) => r.summary.rowsRemaining),
+      consistent: parts.every(({ result }) => result.summary.consistent),
+      defaultCountryCode: first.defaultCountryCode,
     },
   };
 }

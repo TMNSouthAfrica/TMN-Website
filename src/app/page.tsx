@@ -5,8 +5,9 @@ import StepIndicator from "@/components/StepIndicator";
 import Logo from "@/components/Logo";
 import CleaningTypeStep from "@/components/CleaningTypeStep";
 import OptOutStep, { sheetKey } from "@/components/OptOutStep";
-import CustomerStep from "@/components/CustomerStep";
-import ResultsStep from "@/components/ResultsStep";
+import CustomerStep, { type CustomerSheetState } from "@/components/CustomerStep";
+import type { ExtraColumn } from "@/components/CustomerSheetPanel";
+import ResultsStep, { type ResultSource } from "@/components/ResultsStep";
 import type { ColumnRole } from "@/components/ColumnMapper";
 import { parseUploadedFile } from "@/lib/parseFile";
 import {
@@ -15,8 +16,12 @@ import {
   OPT_OUT_SHEET_NAME_PATTERN,
   toFieldName,
 } from "@/lib/columnDetect";
-import { buildOptOutSet, scrubCustomerSheet } from "@/lib/scrub";
-import { buildCanonicalOutput, type CanonicalOutput } from "@/lib/canonicalOutput";
+import { buildOptOutSet, combineScrubResults, scrubCustomerSheet } from "@/lib/scrub";
+import {
+  buildCanonicalOutput,
+  combineCanonicalOutputs,
+  type CanonicalOutput,
+} from "@/lib/canonicalOutput";
 import type {
   CleaningType,
   CustomerSheetConfig,
@@ -57,6 +62,38 @@ function rolesToConfig(roles: RolesMap): {
   return { phoneColIndexes, countryCodeColIndex, nameColIndex };
 }
 
+/**
+ * Source columns not already used by the canonical schema (phone/country/name,
+ * or a ContactStatus/AllowCampaign/AllowSMS passthrough match) — the user picks
+ * which of these, if any, to carry into the output alongside the standard fields.
+ */
+function extraColumnCandidatesFor(sheet: ParsedSheet, config: CustomerSheetConfig): ExtraColumn[] {
+  const passthrough = detectPassthroughColumns(sheet.headers);
+  const usedIndexes = new Set<number>([
+    ...config.phoneColIndexes,
+    ...(config.countryCodeColIndex !== null ? [config.countryCodeColIndex] : []),
+    ...(config.nameColIndex !== null ? [config.nameColIndex] : []),
+    ...(passthrough.contactStatusIndex !== null ? [passthrough.contactStatusIndex] : []),
+    ...(passthrough.allowCampaignIndex !== null ? [passthrough.allowCampaignIndex] : []),
+    ...(passthrough.allowSmsIndex !== null ? [passthrough.allowSmsIndex] : []),
+  ]);
+  return sheet.headers
+    .map((header, index) => ({ index, header, fieldName: toFieldName(header) }))
+    .filter(({ index }) => !usedIndexes.has(index));
+}
+
+/** Applies a role change, keeping country code and name to a single column each. */
+function withRole(roles: RolesMap, colIndex: number, role: ColumnRole): RolesMap {
+  const next = { ...roles };
+  if (role === "countrycode" || role === "name") {
+    for (const k of Object.keys(next)) {
+      if (next[Number(k)] === role) delete next[Number(k)];
+    }
+  }
+  next[colIndex] = role;
+  return next;
+}
+
 const STEPS_BASIC = ["Cleaning type", "Customer database", "Summary"];
 const STEPS_OPTOUT = ["Cleaning type", "Opt-out list", "Customer database", "Summary"];
 
@@ -72,15 +109,17 @@ export default function Home() {
   const [optOutLoading, setOptOutLoading] = useState(false);
   const [optOutError, setOptOutError] = useState<string | null>(null);
 
-  // --- Customer state ---
-  const [customerFile, setCustomerFile] = useState<ParsedFile | null>(null);
-  const [customerSheetName, setCustomerSheetName] = useState<string | null>(null);
-  const [customerRoles, setCustomerRoles] = useState<RolesMap>({});
-  const [extraColumnsSelected, setExtraColumnsSelected] = useState<Record<number, boolean>>({});
+  // --- Customer state (one or many files/sheets, used by both cleaning types) ---
+  const [customerFiles, setCustomerFiles] = useState<ParsedFile[]>([]);
+  const [customerSheets, setCustomerSheets] = useState<Record<string, CustomerSheetState>>({});
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerProgress, setCustomerProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [customerError, setCustomerError] = useState<string | null>(null);
 
   const [result, setResult] = useState<ScrubResult | null>(null);
+  const [resultSources, setResultSources] = useState<ResultSource[]>([]);
   const [canonicalOutput, setCanonicalOutput] = useState<CanonicalOutput | null>(null);
 
   async function handleOptOutFiles(files: File[]) {
@@ -164,82 +203,104 @@ export default function Home() {
   const canContinueFromOptOut =
     optOutSources.length > 0 && optOutSources.every((s) => s.config.phoneColIndexes.length > 0);
 
-  async function handleCustomerFile(files: File[]) {
-    const file = files[0];
-    if (!file) return;
+  async function handleCustomerFiles(files: File[]) {
+    if (files.length === 0) return;
     setCustomerLoading(true);
     setCustomerError(null);
-    try {
-      const parsed = await parseUploadedFile(file);
-      const withData = parsed.sheets.filter((s) => s.headers.length > 0);
-      const chosen = (withData.length > 0 ? withData : parsed.sheets).reduce((best, s) =>
-        s.rows.length > best.rows.length ? s : best,
-      );
-      setCustomerFile(parsed);
-      setCustomerSheetName(chosen.name);
-      setCustomerRoles(rolesFromDetection(chosen.headers));
-      setExtraColumnsSelected({});
-    } catch (e) {
-      setCustomerError(e instanceof Error ? e.message : "Could not read that file.");
-    } finally {
-      setCustomerLoading(false);
+    setCustomerProgress({ done: 0, total: files.length });
+    const parsed: ParsedFile[] = [];
+    const failed: string[] = [];
+    // One at a time so a 50+ file drop shows progress and doesn't load every
+    // workbook into memory at once.
+    for (const file of files) {
+      try {
+        parsed.push(await parseUploadedFile(file));
+      } catch {
+        failed.push(file.name);
+      }
+      setCustomerProgress({ done: parsed.length + failed.length, total: files.length });
     }
-  }
-
-  function handleCustomerSheetChange(name: string) {
-    setCustomerSheetName(name);
-    const sheet = customerFile?.sheets.find((s) => s.name === name);
-    setCustomerRoles(rolesFromDetection(sheet?.headers ?? []));
-    setExtraColumnsSelected({});
-  }
-
-  function handleExtraColumnToggle(colIndex: number, included: boolean) {
-    setExtraColumnsSelected((prev) => ({ ...prev, [colIndex]: included }));
-  }
-
-  function handleCustomerRoleChange(colIndex: number, role: ColumnRole) {
-    setCustomerRoles((prev) => {
+    setCustomerFiles((prev) => [...prev, ...parsed]);
+    setCustomerSheets((prev) => {
       const next = { ...prev };
-      if (role === "countrycode" || role === "name") {
-        for (const k of Object.keys(next)) {
-          if (next[Number(k)] === role) delete next[Number(k)];
+      for (const file of parsed) {
+        // Same default as a single upload: the sheet with the most rows is
+        // included; any other sheet can be ticked in as well.
+        const withData = file.sheets.filter((s) => s.headers.length > 0);
+        const largest = (withData.length > 0 ? withData : file.sheets).reduce((best, s) =>
+          s.rows.length > best.rows.length ? s : best,
+        );
+        for (const sheet of file.sheets) {
+          next[sheetKey(file.id, sheet.name)] = {
+            included: sheet === largest,
+            roles: rolesFromDetection(sheet.headers),
+            extraColumnsSelected: {},
+          };
         }
       }
-      next[colIndex] = role;
       return next;
     });
+    if (failed.length > 0) {
+      setCustomerError(
+        `Could not read ${failed.length === 1 ? "this file" : `these ${failed.length} files`}: ${failed.join(", ")}`,
+      );
+    }
+    setCustomerProgress(null);
+    setCustomerLoading(false);
   }
 
-  const customerSheet = customerFile?.sheets.find((s) => s.name === customerSheetName) ?? null;
-  const customerConfig: CustomerSheetConfig = useMemo(() => {
-    const { phoneColIndexes, countryCodeColIndex, nameColIndex } = rolesToConfig(customerRoles);
-    return { phoneColIndexes, countryCodeColIndex, nameColIndex };
-  }, [customerRoles]);
+  function updateCustomerSheet(key: string, update: (state: CustomerSheetState) => CustomerSheetState) {
+    setCustomerSheets((prev) => (prev[key] ? { ...prev, [key]: update(prev[key]) } : prev));
+  }
 
-  const canRun = !!customerSheet && customerConfig.phoneColIndexes.length > 0;
+  function handleRemoveCustomerFile(fileId: string) {
+    setCustomerFiles((prev) => prev.filter((f) => f.id !== fileId));
+    setCustomerSheets((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${fileId}::`))),
+    );
+  }
 
-  // Source columns not already used by the canonical schema (phone/country/name,
-  // or a ContactStatus/AllowCampaign/AllowSMS passthrough match) — the user picks
-  // which of these, if any, to carry into the output alongside the standard fields.
-  const extraColumnCandidates = useMemo(() => {
-    if (!customerSheet) return [];
-    const passthrough = detectPassthroughColumns(customerSheet.headers);
-    const usedIndexes = new Set<number>([
-      ...customerConfig.phoneColIndexes,
-      ...(customerConfig.countryCodeColIndex !== null ? [customerConfig.countryCodeColIndex] : []),
-      ...(customerConfig.nameColIndex !== null ? [customerConfig.nameColIndex] : []),
-      ...(passthrough.contactStatusIndex !== null ? [passthrough.contactStatusIndex] : []),
-      ...(passthrough.allowCampaignIndex !== null ? [passthrough.allowCampaignIndex] : []),
-      ...(passthrough.allowSmsIndex !== null ? [passthrough.allowSmsIndex] : []),
-    ]);
-    return customerSheet.headers
-      .map((header, index) => ({ index, header, fieldName: toFieldName(header) }))
-      .filter(({ index }) => !usedIndexes.has(index));
-  }, [customerSheet, customerConfig]);
+  function handleRemoveAllCustomerFiles() {
+    setCustomerFiles([]);
+    setCustomerSheets({});
+    setCustomerError(null);
+  }
 
-  const selectedExtraColumnIndexes = extraColumnCandidates
-    .filter(({ index }) => extraColumnsSelected[index])
-    .map(({ index }) => index);
+  const customerSources = useMemo(() => {
+    const sources: {
+      key: string;
+      file: ParsedFile;
+      sheet: ParsedSheet;
+      config: CustomerSheetConfig;
+      extraColumns: ExtraColumn[];
+      extraColumnsSelected: Record<number, boolean>;
+    }[] = [];
+    for (const file of customerFiles) {
+      for (const sheet of file.sheets) {
+        const key = sheetKey(file.id, sheet.name);
+        const state = customerSheets[key];
+        if (!state?.included) continue;
+        const config = rolesToConfig(state.roles);
+        sources.push({
+          key,
+          file,
+          sheet,
+          config,
+          extraColumns: extraColumnCandidatesFor(sheet, config),
+          extraColumnsSelected: state.extraColumnsSelected,
+        });
+      }
+    }
+    return sources;
+  }, [customerFiles, customerSheets]);
+
+  function customerExtraColumnsFor(key: string): ExtraColumn[] {
+    const found = customerSources.find((s) => s.key === key);
+    return found ? found.extraColumns : [];
+  }
+
+  const canRun =
+    customerSources.length > 0 && customerSources.every((s) => s.config.phoneColIndexes.length > 0);
 
   const STEPS = cleaningType === "optout" ? STEPS_OPTOUT : STEPS_BASIC;
   const optOutStepIndex = 1;
@@ -248,20 +309,44 @@ export default function Home() {
   const customerStepIndex = customerStepIndexFor(cleaningType);
   const summaryStepIndex = summaryStepIndexFor(cleaningType);
 
+  function sourceLabel(file: ParsedFile, sheetName: string) {
+    return file.sheets.length > 1 ? `${file.fileName} — ${sheetName}` : file.fileName;
+  }
+
   function runScrub() {
-    if (!customerSheet) return;
+    if (customerSources.length === 0) return;
     const optOutSet =
       cleaningType === "optout" ? buildOptOutSet(optOutSources, defaultCountryCode) : new Set<string>();
-    const scrubResult = scrubCustomerSheet(customerSheet, customerConfig, optOutSet, defaultCountryCode);
-    setResult(scrubResult);
-    setCanonicalOutput(
-      buildCanonicalOutput(
-        customerSheet,
-        customerConfig,
-        scrubResult.keptRows,
-        defaultCountryCode,
-        selectedExtraColumnIndexes,
-      ),
+    // One shared set so a number kept from an earlier sheet counts as a duplicate later on.
+    const seenNumbers = new Set<string>();
+    const parts = customerSources.map(({ file, sheet, config, extraColumns, extraColumnsSelected }) => {
+      const scrubResult = scrubCustomerSheet(sheet, config, optOutSet, defaultCountryCode, seenNumbers);
+      const extraIndexes = extraColumns
+        .filter(({ index }) => extraColumnsSelected[index])
+        .map(({ index }) => index);
+      return {
+        file,
+        sheetName: sheet.name,
+        label: sourceLabel(file, sheet.name),
+        result: scrubResult,
+        canonical: buildCanonicalOutput(sheet, config, scrubResult.keptRows, defaultCountryCode, extraIndexes),
+      };
+    });
+
+    if (parts.length === 1) {
+      setResult(parts[0].result);
+      setCanonicalOutput(parts[0].canonical);
+    } else {
+      setResult(combineScrubResults(parts));
+      setCanonicalOutput(combineCanonicalOutputs(parts.map((p) => p.canonical)));
+    }
+    setResultSources(
+      parts.map(({ file, sheetName, label, result }) => ({
+        file,
+        sheetName,
+        label,
+        summary: result.summary,
+      })),
     );
     setStep(summaryStepIndex);
   }
@@ -271,11 +356,10 @@ export default function Home() {
     setOptOutFiles([]);
     setOptOutRoles({});
     setOptOutIncluded({});
-    setCustomerFile(null);
-    setCustomerSheetName(null);
-    setCustomerRoles({});
-    setExtraColumnsSelected({});
+    setCustomerFiles([]);
+    setCustomerSheets({});
     setResult(null);
+    setResultSources([]);
     setCanonicalOutput(null);
     setStep(0);
   }
@@ -363,19 +447,33 @@ export default function Home() {
             <CustomerStep
               stepNumber={cleaningType === "optout" ? 3 : 2}
               showOptOutCopy={cleaningType === "optout"}
-              file={customerFile}
-              selectedSheetName={customerSheetName}
-              roles={customerRoles}
-              extraColumns={extraColumnCandidates}
-              extraColumnsSelected={extraColumnsSelected}
-              onFile={handleCustomerFile}
-              onSheetChange={handleCustomerSheetChange}
-              onRoleChange={handleCustomerRoleChange}
-              onExtraColumnToggle={handleExtraColumnToggle}
+              files={customerFiles}
+              sheets={customerSheets}
+              extraColumnsFor={customerExtraColumnsFor}
+              onFiles={handleCustomerFiles}
+              onIncludedChange={(key, included) =>
+                updateCustomerSheet(key, (state) => ({ ...state, included }))
+              }
+              onRoleChange={(key, colIndex, role) =>
+                updateCustomerSheet(key, (state) => ({
+                  ...state,
+                  roles: withRole(state.roles, colIndex, role),
+                }))
+              }
+              onExtraColumnToggle={(key, colIndex, included) =>
+                updateCustomerSheet(key, (state) => ({
+                  ...state,
+                  extraColumnsSelected: { ...state.extraColumnsSelected, [colIndex]: included },
+                }))
+              }
+              onRemoveFile={handleRemoveCustomerFile}
+              onRemoveAll={handleRemoveAllCustomerFiles}
               onBack={() => setStep(cleaningType === "optout" ? optOutStepIndex : 0)}
               onRun={runScrub}
               canRun={canRun}
+              includedCount={customerSources.length}
               loading={customerLoading}
+              progress={customerProgress}
               error={customerError}
             />
           )}
@@ -384,15 +482,13 @@ export default function Home() {
             step === summaryStepIndex &&
             result &&
             canonicalOutput &&
-            customerFile &&
-            customerSheetName && (
+            resultSources.length > 0 && (
               <ResultsStep
                 stepNumber={cleaningType === "optout" ? 4 : 3}
                 cleaningType={cleaningType}
                 result={result}
                 canonicalOutput={canonicalOutput}
-                customerFile={customerFile}
-                customerSheetName={customerSheetName}
+                sources={resultSources}
                 onBack={() => setStep(customerStepIndex)}
                 onRestart={restart}
               />
