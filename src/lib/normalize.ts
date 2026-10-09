@@ -90,6 +90,13 @@ export function countryInfo(code: string): { name: string; flag: string } {
 /** A number without + or 00 is only read as international from this length up. */
 const MIN_INTERNATIONAL_LENGTH = 11;
 
+/**
+ * Digits needed after a "00" prefix for it to be an international number
+ * (country code + subscriber number). Fewer means a local number typed with
+ * an extra 0, e.g. "0082 595 1668" is 082 595 1668, not South Korea.
+ */
+const MIN_DIGITS_AFTER_00 = 10;
+
 function countryCallingCodeOf(digits: string): string | null {
   for (const length of [1, 2, 3]) {
     const prefix = digits.slice(0, length);
@@ -173,7 +180,9 @@ export interface PhoneParts {
  *     after it ("27 082…").
  *  3. Otherwise a leading "00" is the international dialling prefix
  *     ("0027821234567"), so it is dropped and the rest read as international,
- *     as is a number written with a "+".
+ *     as is a number written with a "+". When too few digits follow the "00"
+ *     for an international number ("0082 595 1668"), it's a local number
+ *     typed with an extra 0 and is read as one.
  *  4. A single leading 0 means a local number: it is replaced with
  *     `defaultCountryCode`.
  *  5. A number (without + or 00) exactly as long as a local number of the
@@ -205,6 +214,13 @@ export function splitPhoneNumber(
   }
 
   const defaultCc = onlyDigits(defaultCountryCode);
+  if (
+    !String(raw).includes("+") &&
+    digits.startsWith("00") &&
+    digits.length - 2 < MIN_DIGITS_AFTER_00
+  ) {
+    digits = digits.slice(1);
+  }
   const writtenInternational = String(raw).includes("+") || digits.startsWith("00");
 
   if (digits.startsWith("00")) {

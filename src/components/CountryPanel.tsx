@@ -55,18 +55,29 @@ export default function CountryPanel({
 
   return (
     <div className="animate-fade-up rounded-2xl border border-zinc-100 p-4 shadow-sm">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold text-zinc-800">Countries found</h3>
-        <span className="text-xs text-zinc-500">
-          {includedRows.toLocaleString()} of {totalRows.toLocaleString()} contacts included ·{" "}
-          <button type="button" onClick={() => onSetAll(true)} className="font-medium text-brand-green hover:underline">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-zinc-500">
+            {includedRows.toLocaleString()} of {totalRows.toLocaleString()} contacts included
+          </span>
+          <button
+            type="button"
+            onClick={() => onSetAll(true)}
+            disabled={includedRows === totalRows}
+            className="rounded-full border border-brand-green/40 px-3 py-1 text-xs font-semibold text-brand-green transition-colors hover:bg-brand-green/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
             Select all
-          </button>{" "}
-          ·{" "}
-          <button type="button" onClick={() => onSetAll(false)} className="font-medium text-brand-green hover:underline">
-            Clear all
           </button>
-        </span>
+          <button
+            type="button"
+            onClick={() => onSetAll(false)}
+            disabled={includedRows === 0}
+            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Deselect all
+          </button>
+        </div>
       </div>
       <p className="mt-1 text-xs text-zinc-500">
         Detected from the phone numbers in your file(s). Untick a country to leave its contacts out
