@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Dropzone from "./Dropzone";
-import CountryCodeSelect from "./CountryCodeSelect";
 import type { ColumnRole } from "./ColumnMapper";
 import Button from "./Button";
 import CustomerSheetPanel, { type ExtraColumn } from "./CustomerSheetPanel";
@@ -18,8 +17,8 @@ export interface CustomerSheetState {
 interface CustomerStepProps {
   stepNumber: number;
   showOptOutCopy: boolean;
-  defaultCountryCode: string;
-  onDefaultCountryCodeChange: (value: string) => void;
+  /** The "Countries found" panel, shown once files are loaded. */
+  countryPanel: ReactNode;
   files: ParsedFile[];
   sheets: Record<string, CustomerSheetState>;
   extraColumnsFor: (key: string) => ExtraColumn[];
@@ -46,8 +45,7 @@ interface CustomerStepProps {
 export default function CustomerStep({
   stepNumber,
   showOptOutCopy,
-  defaultCountryCode,
-  onDefaultCountryCodeChange,
+  countryPanel,
   files,
   sheets,
   extraColumnsFor,
@@ -95,12 +93,6 @@ export default function CustomerStep({
         </p>
       </div>
 
-      <CountryCodeSelect
-        id="customer-cc"
-        value={defaultCountryCode}
-        onChange={onDefaultCountryCodeChange}
-      />
-
       <Dropzone
         label={
           progress
@@ -141,6 +133,8 @@ export default function CustomerStep({
           )}
         </div>
       )}
+
+      {files.length > 0 && countryPanel}
 
       <div className="flex flex-col gap-3">
         {files.map((file) => (

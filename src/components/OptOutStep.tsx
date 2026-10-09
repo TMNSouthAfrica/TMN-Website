@@ -1,7 +1,6 @@
 "use client";
 
 import Dropzone from "./Dropzone";
-import CountryCodeSelect from "./CountryCodeSelect";
 import ColumnMapper, { ColumnRole } from "./ColumnMapper";
 import Button from "./Button";
 import type { ParsedFile } from "@/lib/types";
@@ -16,8 +15,6 @@ interface OptOutStepProps {
   files: ParsedFile[];
   roles: Record<string, Record<number, ColumnRole>>;
   included: Record<string, boolean>;
-  defaultCountryCode: string;
-  onDefaultCountryCodeChange: (value: string) => void;
   onFiles: (files: File[]) => void;
   onRoleChange: (key: string, colIndex: number, role: ColumnRole) => void;
   onIncludedChange: (key: string, included: boolean) => void;
@@ -34,8 +31,6 @@ export default function OptOutStep({
   files,
   roles,
   included,
-  defaultCountryCode,
-  onDefaultCountryCodeChange,
   onFiles,
   onRoleChange,
   onIncludedChange,
@@ -60,11 +55,10 @@ export default function OptOutStep({
         </p>
       </div>
 
-      <CountryCodeSelect
-        id="cc"
-        value={defaultCountryCode}
-        onChange={onDefaultCountryCodeChange}
-      />
+      <p className="text-xs text-zinc-500">
+        Numbers in any format are matched (082…, +27 82…, 0027…). Numbers starting with 0 get the
+        country detected from your customer file(s) on the next step.
+      </p>
 
       <Dropzone
         label="Drop opt-out file(s) here"

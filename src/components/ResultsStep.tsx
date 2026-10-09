@@ -73,6 +73,7 @@ export default function ResultsStep({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const { summary } = result;
   const combined = sources.length > 1;
+  const anyExcluded = summary.excludedCountryRowsRemoved > 0;
   const { file: customerFile, sheetName: customerSheetName } = sources[0];
 
   function downloadCleaned() {
@@ -193,6 +194,13 @@ export default function ResultsStep({
           value={summary.invalidRowsRemoved}
           accent="red"
         />
+        {anyExcluded && (
+          <StatCard
+            label="Excluded-country contacts removed"
+            value={summary.excludedCountryRowsRemoved}
+            accent="zinc"
+          />
+        )}
         <StatCard
           label="Duplicates removed"
           value={summary.duplicateRowsRemoved}
@@ -233,6 +241,7 @@ export default function ResultsStep({
                   "Sheet",
                   "Rows",
                   "Invalid",
+                  ...(anyExcluded ? ["Excluded"] : []),
                   "Duplicates",
                   ...(cleaningType === "optout" ? ["Opt-outs"] : []),
                   "Kept",
@@ -252,6 +261,11 @@ export default function ResultsStep({
                   <td className="px-4 py-2.5 font-medium text-zinc-700">{s.label}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.totalOriginalRows}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.invalidRowsRemoved}</td>
+                  {anyExcluded && (
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {s.summary.excludedCountryRowsRemoved}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.duplicateRowsRemoved}</td>
                   {cleaningType === "optout" && (
                     <td className="px-4 py-2.5 text-right tabular-nums">{s.summary.optOutRowsRemoved}</td>
@@ -320,14 +334,18 @@ export default function ResultsStep({
                           ? "bg-brand-orange/10 text-brand-orange"
                           : c.reason === "invalid"
                             ? "bg-red-50 text-red-600"
-                            : "bg-zinc-100 text-zinc-500"
+                            : c.reason === "excluded-country"
+                              ? "bg-brand-navy/10 text-brand-navy"
+                              : "bg-zinc-100 text-zinc-500"
                       }`}
                     >
                       {c.reason === "opt-out"
                         ? "Opt-out"
                         : c.reason === "invalid"
                           ? "Invalid number"
-                          : "Duplicate"}
+                          : c.reason === "excluded-country"
+                            ? "Excluded country"
+                            : "Duplicate"}
                     </span>
                   </td>
                   {combined && <td className="px-4 py-2.5 text-zinc-500">{c.source}</td>}
