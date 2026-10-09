@@ -6,6 +6,7 @@ import Logo from "@/components/Logo";
 import CleaningTypeStep from "@/components/CleaningTypeStep";
 import OptOutStep, { sheetKey } from "@/components/OptOutStep";
 import CustomerStep, { type CustomerSheetState } from "@/components/CustomerStep";
+import CountryPanel from "@/components/CountryPanel";
 import type { ExtraColumn } from "@/components/CustomerSheetPanel";
 import ResultsStep, { type ResultSource } from "@/components/ResultsStep";
 import type { ColumnRole } from "@/components/ColumnMapper";
@@ -17,6 +18,7 @@ import {
   toFieldName,
 } from "@/lib/columnDetect";
 import { buildOptOutSet, combineScrubResults, scrubCustomerSheet } from "@/lib/scrub";
+import { countCountries, detectDefaultCountry, FALLBACK_COUNTRY_CODE } from "@/lib/countryDetect";
 import {
   buildCanonicalOutput,
   combineCanonicalOutputs,
@@ -100,7 +102,10 @@ const STEPS_OPTOUT = ["Cleaning type", "Opt-out list", "Customer database", "Sum
 export default function Home() {
   const [step, setStep] = useState(0);
   const [cleaningType, setCleaningType] = useState<CleaningType | null>(null);
-  const [defaultCountryCode, setDefaultCountryCode] = useState("27");
+  // Country for numbers written without a country code: detected from the
+  // customer files unless the user picks one.
+  const [countryOverride, setCountryOverride] = useState<string | null>(null);
+  const [excludedCountries, setExcludedCountries] = useState<ReadonlySet<string>>(new Set());
 
   // --- Opt-out state ---
   const [optOutFiles, setOptOutFiles] = useState<ParsedFile[]>([]);
@@ -294,13 +299,36 @@ export default function Home() {
     return sources;
   }, [customerFiles, customerSheets]);
 
+  const detectedCountry = useMemo(() => detectDefaultCountry(customerSources), [customerSources]);
+  const defaultCountryCode = countryOverride ?? detectedCountry ?? FALLBACK_COUNTRY_CODE;
+  const countryCounts = useMemo(
+    () => countCountries(customerSources, defaultCountryCode),
+    [customerSources, defaultCountryCode],
+  );
+  const includedCountryCount = countryCounts.filter((c) => !excludedCountries.has(c.code)).length;
+
+  function handleCountryToggle(code: string, included: boolean) {
+    setExcludedCountries((prev) => {
+      const next = new Set(prev);
+      if (included) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  function handleAllCountries(included: boolean) {
+    setExcludedCountries(included ? new Set() : new Set(countryCounts.map((c) => c.code)));
+  }
+
   function customerExtraColumnsFor(key: string): ExtraColumn[] {
     const found = customerSources.find((s) => s.key === key);
     return found ? found.extraColumns : [];
   }
 
   const canRun =
-    customerSources.length > 0 && customerSources.every((s) => s.config.phoneColIndexes.length > 0);
+    customerSources.length > 0 &&
+    customerSources.every((s) => s.config.phoneColIndexes.length > 0) &&
+    (countryCounts.length === 0 || includedCountryCount > 0);
 
   const STEPS = cleaningType === "optout" ? STEPS_OPTOUT : STEPS_BASIC;
   const optOutStepIndex = 1;
@@ -320,7 +348,14 @@ export default function Home() {
     // One shared set so a number kept from an earlier sheet counts as a duplicate later on.
     const seenNumbers = new Set<string>();
     const parts = customerSources.map(({ file, sheet, config, extraColumns, extraColumnsSelected }) => {
-      const scrubResult = scrubCustomerSheet(sheet, config, optOutSet, defaultCountryCode, seenNumbers);
+      const scrubResult = scrubCustomerSheet(
+        sheet,
+        config,
+        optOutSet,
+        defaultCountryCode,
+        seenNumbers,
+        excludedCountries,
+      );
       const extraIndexes = extraColumns
         .filter(({ index }) => extraColumnsSelected[index])
         .map(({ index }) => index);
@@ -358,6 +393,8 @@ export default function Home() {
     setOptOutIncluded({});
     setCustomerFiles([]);
     setCustomerSheets({});
+    setCountryOverride(null);
+    setExcludedCountries(new Set());
     setResult(null);
     setResultSources([]);
     setCanonicalOutput(null);
@@ -429,8 +466,6 @@ export default function Home() {
               files={optOutFiles}
               roles={optOutRoles}
               included={optOutIncluded}
-              defaultCountryCode={defaultCountryCode}
-              onDefaultCountryCodeChange={setDefaultCountryCode}
               onFiles={handleOptOutFiles}
               onRoleChange={handleOptOutRoleChange}
               onIncludedChange={handleOptOutIncludedChange}
@@ -447,8 +482,20 @@ export default function Home() {
             <CustomerStep
               stepNumber={cleaningType === "optout" ? 3 : 2}
               showOptOutCopy={cleaningType === "optout"}
-              defaultCountryCode={defaultCountryCode}
-              onDefaultCountryCodeChange={setDefaultCountryCode}
+              countryPanel={
+                countryCounts.length > 0 && (
+                  <CountryPanel
+                    countries={countryCounts}
+                    excluded={excludedCountries}
+                    onToggle={handleCountryToggle}
+                    onSetAll={handleAllCountries}
+                    localCountry={defaultCountryCode}
+                    detectedCountry={detectedCountry}
+                    onLocalCountryChange={setCountryOverride}
+                    localCountryOverridden={countryOverride !== null}
+                  />
+                )
+              }
               files={customerFiles}
               sheets={customerSheets}
               extraColumnsFor={customerExtraColumnsFor}

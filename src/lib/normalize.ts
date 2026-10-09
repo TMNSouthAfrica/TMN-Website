@@ -15,31 +15,77 @@ export const SUPPORTED_COUNTRIES = [
 ] as const;
 
 /**
- * Every country calling code in use (ITU E.164 geographic codes). No code is
- * the start of another, so at most one can match the front of a number.
+ * Every country calling code in use (ITU E.164 geographic codes) with the
+ * country's name and ISO code (for its flag). No code is the start of
+ * another, so at most one can match the front of a number.
  */
-const COUNTRY_CALLING_CODES = new Set([
-  "1", "7",
-  "20", "211", "212", "213", "216", "218", "220", "221", "222", "223", "224", "225", "226",
-  "227", "228", "229", "230", "231", "232", "233", "234", "235", "236", "237", "238", "239",
-  "240", "241", "242", "243", "244", "245", "246", "247", "248", "249", "250", "251", "252",
-  "253", "254", "255", "256", "257", "258", "260", "261", "262", "263", "264", "265", "266",
-  "267", "268", "269", "27", "290", "291", "297", "298", "299",
-  "30", "31", "32", "33", "34", "350", "351", "352", "353", "354", "355", "356", "357", "358",
-  "359", "36", "370", "371", "372", "373", "374", "375", "376", "377", "378", "379", "380",
-  "381", "382", "383", "385", "386", "387", "389", "39",
-  "40", "41", "420", "421", "423", "43", "44", "45", "46", "47", "48", "49",
-  "500", "501", "502", "503", "504", "505", "506", "507", "508", "509", "51", "52", "53",
-  "54", "55", "56", "57", "58", "590", "591", "592", "593", "594", "595", "596", "597",
-  "598", "599",
-  "60", "61", "62", "63", "64", "65", "66", "670", "672", "673", "674", "675", "676", "677",
-  "678", "679", "680", "681", "682", "683", "685", "686", "687", "688", "689", "690", "691",
-  "692",
-  "81", "82", "84", "850", "852", "853", "855", "856", "86", "880", "886",
-  "90", "91", "92", "93", "94", "95", "960", "961", "962", "963", "964", "965", "966", "967",
-  "968", "970", "971", "972", "973", "974", "975", "976", "977", "98", "992", "993", "994",
-  "995", "996", "998",
-]);
+const COUNTRY_DIRECTORY: Record<string, [name: string, iso: string]> = {
+  "1": ["USA / Canada", "US"], "7": ["Russia / Kazakhstan", "RU"],
+  "20": ["Egypt", "EG"], "211": ["South Sudan", "SS"], "212": ["Morocco", "MA"], "213": ["Algeria", "DZ"],
+  "216": ["Tunisia", "TN"], "218": ["Libya", "LY"], "220": ["Gambia", "GM"], "221": ["Senegal", "SN"],
+  "222": ["Mauritania", "MR"], "223": ["Mali", "ML"], "224": ["Guinea", "GN"], "225": ["Côte d'Ivoire", "CI"],
+  "226": ["Burkina Faso", "BF"], "227": ["Niger", "NE"], "228": ["Togo", "TG"], "229": ["Benin", "BJ"],
+  "230": ["Mauritius", "MU"], "231": ["Liberia", "LR"], "232": ["Sierra Leone", "SL"], "233": ["Ghana", "GH"],
+  "234": ["Nigeria", "NG"], "235": ["Chad", "TD"], "236": ["Central African Republic", "CF"],
+  "237": ["Cameroon", "CM"], "238": ["Cape Verde", "CV"], "239": ["São Tomé and Príncipe", "ST"],
+  "240": ["Equatorial Guinea", "GQ"], "241": ["Gabon", "GA"], "242": ["Congo", "CG"], "243": ["DR Congo", "CD"],
+  "244": ["Angola", "AO"], "245": ["Guinea-Bissau", "GW"], "246": ["British Indian Ocean Territory", "IO"],
+  "247": ["Ascension Island", "AC"], "248": ["Seychelles", "SC"], "249": ["Sudan", "SD"], "250": ["Rwanda", "RW"],
+  "251": ["Ethiopia", "ET"], "252": ["Somalia", "SO"], "253": ["Djibouti", "DJ"], "254": ["Kenya", "KE"],
+  "255": ["Tanzania", "TZ"], "256": ["Uganda", "UG"], "257": ["Burundi", "BI"], "258": ["Mozambique", "MZ"],
+  "260": ["Zambia", "ZM"], "261": ["Madagascar", "MG"], "262": ["Réunion / Mayotte", "RE"], "263": ["Zimbabwe", "ZW"],
+  "264": ["Namibia", "NA"], "265": ["Malawi", "MW"], "266": ["Lesotho", "LS"], "267": ["Botswana", "BW"],
+  "268": ["Eswatini", "SZ"], "269": ["Comoros", "KM"], "27": ["South Africa", "ZA"], "290": ["Saint Helena", "SH"],
+  "291": ["Eritrea", "ER"], "297": ["Aruba", "AW"], "298": ["Faroe Islands", "FO"], "299": ["Greenland", "GL"],
+  "30": ["Greece", "GR"], "31": ["Netherlands", "NL"], "32": ["Belgium", "BE"], "33": ["France", "FR"],
+  "34": ["Spain", "ES"], "350": ["Gibraltar", "GI"], "351": ["Portugal", "PT"], "352": ["Luxembourg", "LU"],
+  "353": ["Ireland", "IE"], "354": ["Iceland", "IS"], "355": ["Albania", "AL"], "356": ["Malta", "MT"],
+  "357": ["Cyprus", "CY"], "358": ["Finland", "FI"], "359": ["Bulgaria", "BG"], "36": ["Hungary", "HU"],
+  "370": ["Lithuania", "LT"], "371": ["Latvia", "LV"], "372": ["Estonia", "EE"], "373": ["Moldova", "MD"],
+  "374": ["Armenia", "AM"], "375": ["Belarus", "BY"], "376": ["Andorra", "AD"], "377": ["Monaco", "MC"],
+  "378": ["San Marino", "SM"], "379": ["Vatican City", "VA"], "380": ["Ukraine", "UA"], "381": ["Serbia", "RS"],
+  "382": ["Montenegro", "ME"], "383": ["Kosovo", "XK"], "385": ["Croatia", "HR"], "386": ["Slovenia", "SI"],
+  "387": ["Bosnia and Herzegovina", "BA"], "389": ["North Macedonia", "MK"], "39": ["Italy", "IT"],
+  "40": ["Romania", "RO"], "41": ["Switzerland", "CH"], "420": ["Czechia", "CZ"], "421": ["Slovakia", "SK"],
+  "423": ["Liechtenstein", "LI"], "43": ["Austria", "AT"], "44": ["United Kingdom", "GB"], "45": ["Denmark", "DK"],
+  "46": ["Sweden", "SE"], "47": ["Norway", "NO"], "48": ["Poland", "PL"], "49": ["Germany", "DE"],
+  "500": ["Falkland Islands", "FK"], "501": ["Belize", "BZ"], "502": ["Guatemala", "GT"], "503": ["El Salvador", "SV"],
+  "504": ["Honduras", "HN"], "505": ["Nicaragua", "NI"], "506": ["Costa Rica", "CR"], "507": ["Panama", "PA"],
+  "508": ["Saint Pierre and Miquelon", "PM"], "509": ["Haiti", "HT"], "51": ["Peru", "PE"], "52": ["Mexico", "MX"],
+  "53": ["Cuba", "CU"], "54": ["Argentina", "AR"], "55": ["Brazil", "BR"], "56": ["Chile", "CL"],
+  "57": ["Colombia", "CO"], "58": ["Venezuela", "VE"], "590": ["Guadeloupe", "GP"], "591": ["Bolivia", "BO"],
+  "592": ["Guyana", "GY"], "593": ["Ecuador", "EC"], "594": ["French Guiana", "GF"], "595": ["Paraguay", "PY"],
+  "596": ["Martinique", "MQ"], "597": ["Suriname", "SR"], "598": ["Uruguay", "UY"], "599": ["Curaçao", "CW"],
+  "60": ["Malaysia", "MY"], "61": ["Australia", "AU"], "62": ["Indonesia", "ID"], "63": ["Philippines", "PH"],
+  "64": ["New Zealand", "NZ"], "65": ["Singapore", "SG"], "66": ["Thailand", "TH"], "670": ["Timor-Leste", "TL"],
+  "672": ["Norfolk Island", "NF"], "673": ["Brunei", "BN"], "674": ["Nauru", "NR"], "675": ["Papua New Guinea", "PG"],
+  "676": ["Tonga", "TO"], "677": ["Solomon Islands", "SB"], "678": ["Vanuatu", "VU"], "679": ["Fiji", "FJ"],
+  "680": ["Palau", "PW"], "681": ["Wallis and Futuna", "WF"], "682": ["Cook Islands", "CK"], "683": ["Niue", "NU"],
+  "685": ["Samoa", "WS"], "686": ["Kiribati", "KI"], "687": ["New Caledonia", "NC"], "688": ["Tuvalu", "TV"],
+  "689": ["French Polynesia", "PF"], "690": ["Tokelau", "TK"], "691": ["Micronesia", "FM"],
+  "692": ["Marshall Islands", "MH"], "81": ["Japan", "JP"], "82": ["South Korea", "KR"], "84": ["Vietnam", "VN"],
+  "850": ["North Korea", "KP"], "852": ["Hong Kong", "HK"], "853": ["Macau", "MO"], "855": ["Cambodia", "KH"],
+  "856": ["Laos", "LA"], "86": ["China", "CN"], "880": ["Bangladesh", "BD"], "886": ["Taiwan", "TW"],
+  "90": ["Turkey", "TR"], "91": ["India", "IN"], "92": ["Pakistan", "PK"], "93": ["Afghanistan", "AF"],
+  "94": ["Sri Lanka", "LK"], "95": ["Myanmar", "MM"], "960": ["Maldives", "MV"], "961": ["Lebanon", "LB"],
+  "962": ["Jordan", "JO"], "963": ["Syria", "SY"], "964": ["Iraq", "IQ"], "965": ["Kuwait", "KW"],
+  "966": ["Saudi Arabia", "SA"], "967": ["Yemen", "YE"], "968": ["Oman", "OM"], "970": ["Palestine", "PS"],
+  "971": ["United Arab Emirates", "AE"], "972": ["Israel", "IL"], "973": ["Bahrain", "BH"], "974": ["Qatar", "QA"],
+  "975": ["Bhutan", "BT"], "976": ["Mongolia", "MN"], "977": ["Nepal", "NP"], "98": ["Iran", "IR"],
+  "992": ["Tajikistan", "TJ"], "993": ["Turkmenistan", "TM"], "994": ["Azerbaijan", "AZ"], "995": ["Georgia", "GE"],
+  "996": ["Kyrgyzstan", "KG"], "998": ["Uzbekistan", "UZ"],
+};
+
+const COUNTRY_CALLING_CODES = new Set(Object.keys(COUNTRY_DIRECTORY));
+
+/** Display name and flag for a country calling code; "" means no code could be found. */
+export function countryInfo(code: string): { name: string; flag: string } {
+  const entry = COUNTRY_DIRECTORY[code];
+  if (!entry) return { name: code ? `+${code}` : "Unknown country", flag: "🌐" };
+  const [name, iso] = entry;
+  const flag = String.fromCodePoint(...[...iso].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+  return { name, flag };
+}
 
 /** A number without + or 00 is only read as international from this length up. */
 const MIN_INTERNATIONAL_LENGTH = 11;
@@ -112,6 +158,8 @@ export function isValidPhoneNumber(
 export interface PhoneParts {
   countryCode: string;
   local: string;
+  /** True when the number carried no country code and the default country was applied. */
+  assumed?: boolean;
 }
 
 /**
@@ -165,7 +213,7 @@ export function splitPhoneNumber(
   } else if (digits.startsWith("0")) {
     const local = digits.slice(1);
     if (!local) return null;
-    return { countryCode: defaultCc, local };
+    return { countryCode: defaultCc, local, assumed: true };
   }
 
   const defaultCountry = SUPPORTED_COUNTRIES.find((c) => c.code === defaultCc);
@@ -174,7 +222,7 @@ export function splitPhoneNumber(
     defaultCountry &&
     (defaultCountry.localLengths as readonly number[]).includes(digits.length)
   ) {
-    return { countryCode: defaultCc, local: digits };
+    return { countryCode: defaultCc, local: digits, assumed: true };
   }
 
   const known = SUPPORTED_COUNTRIES.find(

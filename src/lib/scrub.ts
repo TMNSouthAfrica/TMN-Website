@@ -1,4 +1,4 @@
-import { isValidPhoneNumber, normalizePhoneNumber } from "./normalize";
+import { isValidPhoneNumber, normalizePhoneNumber, splitPhoneNumber } from "./normalize";
 import type {
   CustomerSheetConfig,
   OptOutSheetConfig,
@@ -42,6 +42,10 @@ export function buildOptOutSet(
  * Pass the same `seenNumbers` set across several calls to dedupe across
  * multiple sheets — a number already kept from an earlier sheet is then
  * removed as a duplicate here.
+ *
+ * Numbers from a country in `excludedCountries` (calling code, or "" for an
+ * unknown country) are ignored; a row left with no usable number is removed
+ * as "excluded country" before the duplicate and opt-out checks.
  */
 export function scrubCustomerSheet(
   sheet: ParsedSheet,
@@ -49,6 +53,7 @@ export function scrubCustomerSheet(
   optOutSet: Set<string>,
   defaultCountryCode: string,
   seenNumbers: Set<string> = new Set<string>(),
+  excludedCountries: ReadonlySet<string> = new Set<string>(),
 ): ScrubResult {
   const keptRows: string[][] = [];
   const removedRows: string[][] = [];
@@ -57,6 +62,7 @@ export function scrubCustomerSheet(
   let invalidRowsRemoved = 0;
   let duplicateRowsRemoved = 0;
   let optOutRowsRemoved = 0;
+  let excludedCountryRowsRemoved = 0;
 
   for (const row of sheet.rows) {
     const explicitCc =
@@ -68,14 +74,28 @@ export function scrubCustomerSheet(
 
     const name = config.nameColIndex !== null ? (row[config.nameColIndex] ?? "") : "";
 
-    const validNumbers = config.phoneColIndexes
+    const validParts = config.phoneColIndexes
       .filter((colIndex) => isValidPhoneNumber(row[colIndex], defaultCountryCode, explicitCc))
-      .map((colIndex) => normalizePhoneNumber(row[colIndex], defaultCountryCode, explicitCc))
-      .filter((n): n is string => n !== null);
-    if (validNumbers.length === 0) {
+      .map((colIndex) => splitPhoneNumber(row[colIndex], defaultCountryCode, explicitCc))
+      .filter((p) => p !== null);
+    if (validParts.length === 0) {
       invalidRowsRemoved++;
       removedRows.push(row);
       removedContacts.push({ name, phone: rowNumbers[0] ?? "", reason: "invalid" });
+      continue;
+    }
+
+    const validNumbers = validParts
+      .filter((p) => !excludedCountries.has(p.countryCode))
+      .map((p) => p.countryCode + p.local);
+    if (validNumbers.length === 0) {
+      excludedCountryRowsRemoved++;
+      removedRows.push(row);
+      removedContacts.push({
+        name,
+        phone: validParts[0].countryCode + validParts[0].local,
+        reason: "excluded-country",
+      });
       continue;
     }
 
@@ -116,6 +136,7 @@ export function scrubCustomerSheet(
       duplicateRowsRemoved,
       optOutRowsRemoved,
       invalidRowsRemoved,
+      excludedCountryRowsRemoved,
       rowsRemoved,
       rowsRemaining,
       consistent: totalOriginalRows === rowsRemoved + rowsRemaining,
@@ -149,6 +170,7 @@ export function combineScrubResults(
       duplicateRowsRemoved: sum((r) => r.summary.duplicateRowsRemoved),
       optOutRowsRemoved: sum((r) => r.summary.optOutRowsRemoved),
       invalidRowsRemoved: sum((r) => r.summary.invalidRowsRemoved),
+      excludedCountryRowsRemoved: sum((r) => r.summary.excludedCountryRowsRemoved),
       rowsRemoved: sum((r) => r.summary.rowsRemoved),
       rowsRemaining: sum((r) => r.summary.rowsRemaining),
       consistent: parts.every(({ result }) => result.summary.consistent),

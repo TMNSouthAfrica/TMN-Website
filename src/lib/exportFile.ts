@@ -35,6 +35,7 @@ const REMOVAL_REASON_LABELS: Record<RemovedContact["reason"], string> = {
   "opt-out": "Opt-out",
   duplicate: "Duplicate",
   invalid: "Invalid number",
+  "excluded-country": "Excluded country",
 };
 
 export function buildRemovedContactsCsvBlob(contacts: RemovedContact[]): Blob {
