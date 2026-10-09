@@ -39,6 +39,10 @@ const CASES = [
   ["+44 (0)7700 900123", "27", null, "44|7700900123"],
   ["+1 212 555 0100", "27", null, "1|2125550100"],
   ["0044 7700 900123", "27", null, "44|7700900123"],
+  // A local number typed with an extra 0 isn't read as international
+  ["0082 595 1668", "27", null, "27|825951668"],
+  ["00798351823", "27", null, "27|798351823"],
+  ["0077 123 4567", "263", null, "263|771234567"],
   // A mistyped 10-digit local number isn't given a foreign country code
   ["8212345678", "27", null, "|8212345678"],
   // Separate country-code column
